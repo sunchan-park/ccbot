@@ -62,8 +62,10 @@ fi
 sleep 1
 
 # Start ccbot
+# Unset shell-inherited secrets so python-dotenv loads them from .env
+# (load_dotenv uses override=False, so pre-set env vars would win otherwise)
 echo "Starting ccbot in $TARGET..."
-tmux send-keys -t "$TARGET" "cd ${PROJECT_DIR} && uv run ccbot" Enter
+tmux send-keys -t "$TARGET" "cd ${PROJECT_DIR} && env -u TELEGRAM_BOT_TOKEN -u ALLOWED_USERS -u OPENAI_API_KEY uv run ccbot" Enter
 
 # Verify startup and show logs
 sleep 3
