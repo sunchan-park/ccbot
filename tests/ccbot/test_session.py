@@ -155,3 +155,89 @@ class TestIsWindowId:
         assert mgr._is_window_id("@") is False
         assert mgr._is_window_id("") is False
         assert mgr._is_window_id("@abc") is False
+
+
+class TestHotPathResolution:
+    """Fast-path methods used in handle_new_message — must not read JSONL.
+
+    The old resolve_session_for_window reads the entire JSONL (for summary +
+    message_count) and made the hot path O(file_size), causing multi-hour
+    drains on /compact bursts. These tests protect against regression.
+    """
+
+    def test_resolve_session_path_returns_file_path(
+        self, mgr: SessionManager, tmp_path, monkeypatch
+    ) -> None:
+        from ccbot.config import config
+
+        monkeypatch.setattr(config, "claude_projects_path", tmp_path)
+        project_dir = tmp_path / "-home-user-proj"
+        project_dir.mkdir()
+        jsonl = project_dir / "abc-123.jsonl"
+        jsonl.write_text('{"type":"user"}\n')
+
+        state = mgr.get_window_state("@5")
+        state.session_id = "abc-123"
+        state.cwd = "/home/user/proj"
+
+        result = mgr.resolve_session_path_for_window("@5")
+        assert result == jsonl
+
+    def test_resolve_session_path_returns_none_when_unset(
+        self, mgr: SessionManager
+    ) -> None:
+        # Unknown window → no state → None
+        assert mgr.resolve_session_path_for_window("@99") is None
+
+    def test_resolve_session_path_does_not_open_jsonl(
+        self, mgr: SessionManager, tmp_path, monkeypatch
+    ) -> None:
+        from ccbot.config import config
+
+        monkeypatch.setattr(config, "claude_projects_path", tmp_path)
+        project_dir = tmp_path / "-home-user-proj"
+        project_dir.mkdir()
+        jsonl = project_dir / "abc-123.jsonl"
+        jsonl.write_text('{"type":"user"}\n')
+
+        state = mgr.get_window_state("@5")
+        state.session_id = "abc-123"
+        state.cwd = "/home/user/proj"
+
+        # Make open() blow up to prove the fast path doesn't read the file
+        original_open = open
+
+        def forbidden_open(path, *args, **kwargs):
+            if str(path).endswith(".jsonl"):
+                raise AssertionError(f"fast path should not open JSONL: {path}")
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", forbidden_open)
+        # Must not raise
+        result = mgr.resolve_session_path_for_window("@5")
+        assert result == jsonl
+
+    async def test_find_users_for_session_in_memory_only(
+        self, mgr: SessionManager, monkeypatch
+    ) -> None:
+        # Set up two windows with different sessions, one user has both bound
+        mgr.bind_thread(100, 1, "@1")
+        mgr.bind_thread(100, 2, "@2")
+        mgr.get_window_state("@1").session_id = "sess-a"
+        mgr.get_window_state("@2").session_id = "sess-b"
+
+        # Sentinel: the old impl called resolve_session_for_window which hits disk.
+        # Fail loudly if anyone tries.
+        async def forbidden(*args, **kwargs):
+            raise AssertionError("find_users_for_session must not read JSONL")
+
+        monkeypatch.setattr(mgr, "resolve_session_for_window", forbidden)
+
+        result = await mgr.find_users_for_session("sess-a")
+        assert result == [(100, "@1", 1)]
+
+        result_b = await mgr.find_users_for_session("sess-b")
+        assert result_b == [(100, "@2", 2)]
+
+        result_none = await mgr.find_users_for_session("sess-missing")
+        assert result_none == []

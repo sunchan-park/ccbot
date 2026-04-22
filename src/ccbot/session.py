@@ -708,6 +708,25 @@ class SessionManager:
         self._save_state()
         return None
 
+    def resolve_session_path_for_window(self, window_id: str) -> Path | None:
+        """Fast-path resolve: return JSONL path from persisted state only.
+
+        Avoids the full-file scan in _get_session_direct. Hot-path callers
+        (e.g. handle_new_message) only need the file path, not summary or
+        message_count, so they should use this instead.
+        """
+        state = self.get_window_state(window_id)
+        if not state.session_id or not state.cwd:
+            return None
+
+        path = self._build_session_file_path(state.session_id, state.cwd)
+        if path and path.exists():
+            return path
+
+        # Fallback: glob across project dirs (cwd encoding mismatch)
+        matches = list(config.claude_projects_path.glob(f"*/{state.session_id}.jsonl"))
+        return matches[0] if matches else None
+
     # --- User window offset management ---
 
     def update_user_window_offset(
@@ -800,12 +819,15 @@ class SessionManager:
     ) -> list[tuple[int, str, int]]:
         """Find all users whose thread-bound window maps to the given session_id.
 
+        In-memory lookup against persisted window_state — no file I/O.
+        Called for every incoming message, so must stay cheap.
+
         Returns list of (user_id, window_id, thread_id) tuples.
         """
         result: list[tuple[int, str, int]] = []
         for user_id, thread_id, window_id in self.iter_thread_bindings():
-            resolved = await self.resolve_session_for_window(window_id)
-            if resolved and resolved.session_id == session_id:
+            state = self.get_window_state(window_id)
+            if state.session_id == session_id:
                 result.append((user_id, window_id, thread_id))
         return result
 
