@@ -72,10 +72,10 @@ TOPIC_CHECK_INTERVAL = 60.0  # seconds
 # Both may include optional trailing text (parenthetical or · metadata).
 _TIMER_RE = re.compile(
     r"\s+(?:"
-    r"\((?:\d+m\s*)?\d+s\b[^)]*\)"   # (54s · …) or (1m 30s · …)
+    r"\((?:\d+m\s*)?\d+s\b[^)]*\)"  # (54s · …) or (1m 30s · …)
     r"|"
-    r"(?:(?:\d+m\s*)?\d+s|\d+m)"      # bare 5s / 1m 30s / 2m
-    r"(?:\s+\(.*\))?"                  # optional trailing (Esc to interrupt)
+    r"(?:(?:\d+m\s*)?\d+s|\d+m)"  # bare 5s / 1m 30s / 2m
+    r"(?:\s+\(.*\))?"  # optional trailing (Esc to interrupt)
     r")\s*$"
 )
 
@@ -83,9 +83,7 @@ _TIMER_RE = re.compile(
 _timer_throttle: dict[tuple[int, int], tuple[str, float, float]] = {}
 
 
-def _should_send_status(
-    user_id: int, thread_id: int | None, status_text: str
-) -> bool:
+def _should_send_status(user_id: int, thread_id: int | None, status_text: str) -> bool:
     """Decide whether a status update should be enqueued.
 
     For non-timer status lines, always returns True.
@@ -116,11 +114,11 @@ def _should_send_status(
     # Adaptive interval: widen as the timer runs longer
     t1, t2, t3 = config.status_throttle_intervals
     if elapsed <= 10:
-        min_interval = t1    # real-time for the first 10 seconds
+        min_interval = t1  # real-time for the first 10 seconds
     elif elapsed <= 60:
-        min_interval = t2    # every few seconds up to 1 minute
+        min_interval = t2  # every few seconds up to 1 minute
     else:
-        min_interval = t3    # reduced frequency for long-running tasks
+        min_interval = t3  # reduced frequency for long-running tasks
 
     if since_sent >= min_interval:
         _timer_throttle[key] = (base, first_seen, now)

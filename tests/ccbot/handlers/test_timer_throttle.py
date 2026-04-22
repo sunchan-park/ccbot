@@ -59,7 +59,7 @@ class TestTimerRegex:
             "Reading file.py",
             "Writing to output",
             "Bash echo hello",
-            "file2s",           # no preceding space
+            "file2s",  # no preceding space
             "Processing items",
         ],
     )
